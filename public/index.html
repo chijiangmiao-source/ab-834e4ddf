@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>辐照监测节点 · 无锁采样池地址复用复核器</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>无锁采样池并发事件复核</h1>
+    <p class="subtitle">
+      危险指针（Hazard Pointer）协议 · 对象以
+      <code>(地址, 代次)</code> 共同标识 · 全序事件首个违规定位
+    </p>
+  </header>
+
+  <main class="layout">
+    <section class="panel input-panel">
+      <div class="panel-head">
+        <h2>① 初始单链表</h2>
+        <span class="counter" id="nodeCounter">0 / 16</span>
+      </div>
+      <p class="hint">每行一个节点：<code>地址[, 样本说明]</code>，自上而下成链，第一行为头指针。</p>
+      <textarea id="nodesInput" spellcheck="false" rows="6"
+        placeholder="N1, 监测点-α 初始样本&#10;N2, 监测点-β 初始样本&#10;N3, 监测点-γ 初始样本"></textarea>
+
+      <div class="panel-head" style="margin-top:18px">
+        <h2>② 全局有序事件（≤ 128）</h2>
+        <span class="counter" id="eventCounter">0 / 128</span>
+      </div>
+      <p class="hint">
+        每行：<code>[序号] 线程 操作 [地址] [reclaim=地址:地址]</code>。
+        操作：<code>load / publish / reconfirm / read / retire / scan / reuse</code>
+        （支持中文：装载/发布/再次确认/读取/摘链退役/扫描回收/复用）。<br />
+        <code>publish null</code> 撤销危险指针；<code>scan</code> 不带清单时回收全部“已退役且无人保护”节点。
+      </p>
+      <textarea id="eventsInput" spellcheck="false" rows="16"
+        placeholder="1 T1 load&#10;2 T1 publish N1&#10;3 T1 reconfirm&#10;4 T1 read&#10;5 T2 retire N1&#10;6 T2 scan&#10;7 T2 reuse N1 payload=新样本&#10;8 T1 read"></textarea>
+
+      <div class="actions">
+        <button id="verifyBtn" class="primary">▶ 复核</button>
+        <button id="clearBtn" class="ghost">清空草稿与结论</button>
+        <button id="exampleSafeBtn" class="link">载入：安全读取</button>
+        <button id="exampleReuseBtn" class="link">载入：地址复用 ABA</button>
+        <button id="exampleProtectedBtn" class="link">载入：受保护不可回收</button>
+      </div>
+      <p class="status" id="workerStatus" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="panel result-panel">
+      <div class="panel-head"><h2>③ 复核结论</h2></div>
+      <div id="result" class="result">
+        <div class="placeholder">尚未复核。录入链表与事件后点击「复核」。<br />
+          分析在 Web Worker 内执行，不会阻塞页面。</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>规则：同代次危险指针已发布 + 发布后成功再确认当前头指针 + 读取瞬间头指针未变，三者齐备读取才合法；
+      扫描仅回收未受任何线程保护的退役节点；地址复用仅限已回收节点并产生新代次。</span>
+  </footer>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

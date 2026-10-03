@@ -1,0 +1,35 @@
+# Compose 交付：
+#   docker compose up web        # 在可配置宿主端口提供页面与 /healthz
+#   docker compose run --rm verify   # 规则测试 + 构建检查 + HTTP 冒烟，一次后退出
+# 宿主端口通过环境变量 HOST_PORT 配置（默认 8080）：
+#   HOST_PORT=9090 docker compose up -d web
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hp-sampling-pool-verify:latest
+    container_name: hp-sampling-pool-web
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8080"
+    ports:
+      - "${HOST_PORT:-8080}:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+
+  verify:
+    # 一次性服务：针对地址复用、扫描保护与迟到读取运行规则测试、构建检查和 HTTP 冒烟，
+    # 完成后退出并以退出码报告结果（非 0 即失败）。
+    image: hp-sampling-pool-verify:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hp-sampling-pool-verify
+    entrypoint: ["node", "scripts/verify.mjs"]
+    restart: "no"
