@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>辐照监测节点 · 无锁采样池复核</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; background: #0f1420; color: #e6e9f0; }
+header { max-width: 980px; margin: 0 auto; padding: 22px 16px 4px; }
+h1 { font-size: 20px; margin: 0 0 6px; }
+header p { margin: 0; color: #9aa4b8; font-size: 13px; }
+main { max-width: 980px; margin: 0 auto; padding: 14px 16px 32px; display: grid; gap: 16px; }
+.panel { background: #171e2e; border: 1px solid #263049; border-radius: 10px; padding: 16px; }
+label { display: block; font-size: 13px; color: #aeb8cc; margin: 12px 0 6px; }
+label:first-child { margin-top: 0; }
+input[type=text], textarea { width: 100%; background: #0d1220; color: #e6e9f0; border: 1px solid #2c3a5a; border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+textarea { resize: vertical; }
+.actions { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+button { background: #2f6fed; color: #fff; border: 0; border-radius: 6px; padding: 8px 18px; font-size: 14px; cursor: pointer; }
+button.secondary { background: #2a3550; }
+button.ghost { background: transparent; border: 1px solid #2c3a5a; color: #9aa4b8; padding: 6px 12px; font-size: 12px; }
+button:hover { filter: brightness(1.12); }
+#status { font-size: 13px; color: #9aa4b8; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 600; font-size: 13px; }
+.badge.ok { background: #10351f; color: #4ade80; border: 1px solid #1f5c34; }
+.badge.bad { background: #3b1520; color: #fb7185; border: 1px solid #6b2135; }
+.badge.warn { background: #3a2c10; color: #fbbf24; border: 1px solid #6b521f; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+th, td { border: 1px solid #2c3a5a; padding: 6px 8px; text-align: left; }
+th { background: #1c2740; }
+tr.hl td { background: #2a2030; }
+code { background: #0d1220; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+h3 { font-size: 14px; margin: 16px 0 6px; color: #c7d0e2; }
+.muted { color: #8b96ac; font-size: 12px; }
+details { margin-top: 10px; font-size: 13px; color: #9aa4b8; }
+summary { cursor: pointer; }
+ol.effects { font-size: 12px; color: #9aa4b8; column-count: 2; }
+.kv { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; margin: 6px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>辐照监测节点 · 无锁采样池复核</h1>
+  <p>核对全局有序并发事件：读取不得在对象退役后继续访问；节点以「地址 + 单调代次」标识，地址复用只取已回收地址并产生新代次，避免仅按地址相同把新旧样本混为一项。</p>
+</header>
+<main>
+  <section class="panel">
+    <label for="initial">初始单链表（表头在前，1–16 个节点地址；空格、逗号或 -&gt; 分隔）</label>
+    <input id="initial" type="text" placeholder="A B C" autocomplete="off" spellcheck="false">
+
+    <label for="events">全局有序事件（每行一条，不超过 128 条；# 或 // 之后为注释）</label>
+    <textarea id="events" rows="12" spellcheck="false" placeholder="T1 load
+T1 protect
+T1 confirm
+T1 read
+T2 retire A
+T2 scan
+T3 reuse A"></textarea>
+
+    <details>
+      <summary>事件格式：线程 操作 [地址]</summary>
+      <table>
+        <tr><th>操作</th><th>中文别名</th><th>含义</th></tr>
+        <tr><td><code>load</code></td><td>装载候选</td><td>把当前头指针装载为线程候选</td></tr>
+        <tr><td><code>protect</code></td><td>发布危险指针</td><td>发布对候选（地址+代次）的保护</td></tr>
+        <tr><td><code>confirm</code></td><td>再次确认</td><td>确认当前头指针仍为同代次候选</td></tr>
+        <tr><td><code>read</code></td><td>读取</td><td>读取候选节点（须已保护并确认，且候选代次未退役）</td></tr>
+        <tr><td><code>retire 地址</code></td><td>摘链退役</td><td>摘除链表头节点并退役（仅限头节点）</td></tr>
+        <tr><td><code>scan</code></td><td>扫描回收</td><td>回收未受任何线程保护的退役节点</td></tr>
+        <tr><td><code>reuse 地址</code></td><td>复用地址</td><td>取已回收地址生成新代次并压入表头</td></tr>
+      </table>
+    </details>
+
+    <div class="actions">
+      <button id="review">复核</button>
+      <button id="clear" type="button" class="secondary">清空草稿与结论</button>
+      <button id="exPass" type="button" class="ghost">填入通过示例</button>
+      <button id="exLate" type="button" class="ghost">填入迟到读取示例</button>
+      <span id="status" role="status"></span>
+    </div>
+  </section>
+
+  <section id="result" class="panel" hidden></section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+name: hpmon
+
+services:
+  web:
+    build: ./web
+    ports:
+      - "${HOST_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 3s
+
+  verify:
+    build:
+      context: .
+      dockerfile: verify/Dockerfile
+    environment:
+      WEB_BASE_URL: http://web
+    depends_on:
+      web:
+        condition: service_healthy
